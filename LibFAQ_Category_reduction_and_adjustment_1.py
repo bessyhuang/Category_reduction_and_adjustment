@@ -66,7 +66,19 @@ def Build_TFIDF(text_count_vector):
     
     return docs_tfidf, df
 
-
+def Get_adjusted_category(candidate_category_dict, candidate_category_list):
+    max_count_category = max(candidate_category_dict, key=candidate_category_dict.get)
+    max_frequency_category = max(Counter(candidate_category_list))
+    print('最多 Question 的類別: {}\n最多候選的類別: {}'.format(max_count_category, max_frequency_category))
+    print('candidate_category_list: {}\n=> Counter: {}'.format(candidate_category_list, Counter(candidate_category_list)))
+    print('candidate_category_dict: {}'.format(candidate_category_dict))
+    
+    if max_count_category == max_frequency_category:
+        return max_count_category
+    else:
+        return max_frequency_category
+    
+    
 
 tfidf_transfomer = TfidfTransformer()
 vectorizer = CountVectorizer(tokenizer=lambda x: x.split("_"))
@@ -142,6 +154,7 @@ q_category = df.groupby("query_category")
 
 
 
+candidate_category_list = list()
 candidate_category_dict = dict()
 rawCategory_index_adjustCategory = []
 
@@ -154,16 +167,18 @@ for group in q_category.groups:
     
     for category in q_category.get_group(group)['doc_category'].tolist():
         if category == 'false' or category == '其他':
-            pass
+            candidate_category_list.append(category)
         else:
             # candidate_category_dict { 候選類別： 類別內的 Question 數量 }
-            candidate_category_dict[category] = doc_frequency[category] 
-    #print(candidate_category_dict)
+            candidate_category_dict[category] = doc_frequency[category]
+            candidate_category_list.append(category)
     
-    adjusted_Category = max(candidate_category_dict, key=candidate_category_dict.get)
+    adjusted_Category = Get_adjusted_category(candidate_category_dict, candidate_category_list)
     rawCategory_index_adjustCategory.append([group, group_index, adjusted_Category])
-    print('>>>', [group, group_index, adjusted_Category])
-    
+    print('\n>>>', [group, group_index, adjusted_Category])
+    print()
+    print()
+    candidate_category_list.clear()
     candidate_category_dict.clear()
     
     
@@ -175,7 +190,7 @@ for rawCat, index, adjCat in rawCategory_index_adjustCategory:
     for i in index:
         temp_cat.add(adjCat)
     rowID_adjustedCategory_dict[i] = temp_cat
-print(rowID_adjustedCategory_dict[5901]) #Output：{'關於借還書'}
+# print(rowID_adjustedCategory_dict[5901]) #Output：{'關於借還書'}
 
 
 
