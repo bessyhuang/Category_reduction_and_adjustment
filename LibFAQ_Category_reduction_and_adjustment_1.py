@@ -103,7 +103,7 @@ for query in docs_seg00:
     results = sorted(results, key=lambda x: x[4], reverse=True)
     
     for i in range(50):
-        if results[i][4] >= 0.7:
+        if results[i][4] >= 0.85:
             print('Top' + str(i+1), results[i][4], '\tdoc_類別：', results[i][3])
             print('doc:', results[i][1], results[i][2])
             print()
@@ -153,7 +153,7 @@ for group in q_category.groups:
     group_index = q_category.get_group(group)['doc_category'].index.tolist()
     
     for category in q_category.get_group(group)['doc_category'].tolist():
-        if category == 'false':
+        if category == 'false' or category == '其他':
             pass
         else:
             # candidate_category_dict { 候選類別： 類別內的 Question 數量 }
