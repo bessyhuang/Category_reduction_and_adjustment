@@ -8,7 +8,7 @@
 from sklearn.feature_extraction.text import TfidfTransformer, CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from pymongo import MongoClient
-from collections import Counter
+from collections import Counter, defaultdict
 import pandas as pd
 import csv
 import os
@@ -68,23 +68,58 @@ def Build_TFIDF(text_count_vector):
 
 def Get_adjusted_category(candidate_category_dict, candidate_category_list):
     max_count_category = max(candidate_category_dict, key=candidate_category_dict.get)
-    max_frequency_category = max(Counter(candidate_category_list))
-    print('最多 Question 的類別: {}\n最多候選的類別: {}'.format(max_count_category, max_frequency_category))
-    print('candidate_category_list: {}\n=> Counter: {}'.format(candidate_category_list, Counter(candidate_category_list)))
-    print('candidate_category_dict: {}'.format(candidate_category_dict))
     
-    if max_count_category == max_frequency_category:
-        return max_count_category
+    Counter_candidate_category_list = Counter(candidate_category_list)
+    max_frequency_category = max(Counter_candidate_category_list, key=Counter_candidate_category_list.get)
+    #print('最多 Question 的類別: {}\n最多候選的類別: {}'.format(max_count_category, max_frequency_category))
+    #print('candidate_category_list: {}\n=> Counter: {}'.format(candidate_category_list, Counter_candidate_category_list))
+    
+    #print('candidate_category_dict: {}'.format(candidate_category_dict))
+    
+    if ('false' in candidate_category_dict) == True or ('false' in candidate_category_list) == True:
+        # 候選類別裡 含有'false'以及其他多個類別
+        if len(Counter_candidate_category_list) > 2:
+            del candidate_category_dict['false']
+            second_count_category = max(candidate_category_dict, key=candidate_category_dict.get)
+            
+            del Counter_candidate_category_list['false']
+            second_frequency_category = max(Counter_candidate_category_list, key=Counter_candidate_category_list.get)
+            
+            #print('第二多 Question 的類別: {}\n第二多候選的類別: {}'.format(second_count_category, second_frequency_category))
+            
+            return second_count_category #second_count_category second_frequency_category
+        
+        # 候選類別裡 含有'false'以及其他一個類別
+        elif len(Counter_candidate_category_list) == 2:
+            del candidate_category_dict['false']
+            second_count_category = max(candidate_category_dict, key=candidate_category_dict.get)
+            
+            del Counter_candidate_category_list['false']
+            second_frequency_category = max(Counter_candidate_category_list, key=Counter_candidate_category_list.get)
+            
+            return second_frequency_category #second_count_category second_frequency_category
+            
+        # 候選類別裡 只有 'false'
+        else:
+            return max_count_category
+            
     else:
-        return max_frequency_category
-    
-    
+        # 候選類別裡 (沒有'false') 但含有其他多個類別
+        if len(Counter_candidate_category_list) > 2:
+            return max_frequency_category
+        
+        # 候選類別裡 (沒有'false') 只有一個或兩個類別
+        else:
+            return max_count_category
+
+
 
 tfidf_transfomer = TfidfTransformer()
 vectorizer = CountVectorizer(tokenizer=lambda x: x.split("_"))
 
 
-id_list00, Question_list00, Q_WS_list00, Category_list00, AllFields_list00 = get_mongodb_row('FAQ', {}) 
+id_list00, Question_list00, Q_WS_list00, Category_list00, AllFields_list00 = get_mongodb_row('FAQ', {})
+
 docs_seg00 = seg_CONCAT(Q_WS_list00)
 text_count_vector00, tf_vector00 = BuildVec_for_count_each_term_in_each_doc(docs_seg00)
 docs_tfidf00, df00 = Build_TFIDF(text_count_vector00)
@@ -100,13 +135,19 @@ doc_frequency = Counter(Category_list00)
 # FINAL_LIST ：最後輸出 csv 或 更新 mongodb 的資料
 FINAL_LIST = [] 
 
+
+
+candidate_category_list = list()
+candidate_category_dict = dict()
+rawCategory_index_adjustCategory = []
+
 count = 0
 for query in docs_seg00:
     query_CategoryName = Category_list00[count]
-    #print('第 {} 筆\t\t問句: {}\t類別: {}'.format(count, query, query_CategoryName))
     
     # ============ 計算相似度 ============
     print("=======================================")
+    print('\n第 {} 筆\t問句: {}\t類別: {}\n'.format(count, query, query_CategoryName))
     query_count_vector = vectorizer.transform([query])
     query_tfidf = tfidf_transfomer.transform(query_count_vector)
     similarities = cosine_similarity(query_tfidf, docs_tfidf00).flatten()
@@ -115,15 +156,32 @@ for query in docs_seg00:
     results = sorted(results, key=lambda x: x[4], reverse=True)
     
     for i in range(50):
-        if results[i][4] >= 0.85:
-            print('Top' + str(i+1), results[i][4], '\tdoc_類別：', results[i][3])
-            print('doc:', results[i][1], results[i][2])
+        if results[i][4] >= 0.75:
+            doc_category = results[i][3]
+            candidate_category_list.append(doc_category)
+            # candidate_category_dict { 候選類別： 類別內的 Question 數量 }
+            candidate_category_dict[doc_category] = doc_frequency[doc_category]
+            print('Top' + str(i+1), results[i][4], '\tdoc_類別：', doc_category)
+            print('doc:', results[i][1])
             print()
-
+            """
+            if Question_list00[count] == '如何才能擔任圖書館志工？':
+                print('\n\n\n第 {} 筆\t問句: {}\t類別: {}\n'.format(count, query, query_CategoryName))
+                print('Top' + str(i+1), results[i][4], '\tdoc_類別：', doc_category)
+                print('doc:', results[i][1], candidate_category_dict, candidate_category_list)
+                print()
+            """
             query_id = AllFields_list00[count][3]
-            row = [query_id, Question_list00[count], query, query_CategoryName, results[i][0], results[i][1], results[i][2], results[i][3], results[i][4]]
+            row = [query_id, Question_list00[count], query, query_CategoryName, results[i][0], results[i][1], results[i][2], doc_category, results[i][4]]
             FINAL_LIST.append(row)
-            
+    
+    adjusted_Category = Get_adjusted_category(candidate_category_dict, candidate_category_list)
+    rawCategory_index_adjustCategory.append([query_id, query_CategoryName, adjusted_Category])
+    print('>>>', [query_CategoryName, count, adjusted_Category])
+    print()
+    
+    candidate_category_list.clear()
+    candidate_category_dict.clear()
     count += 1        
 
 """      
@@ -136,74 +194,38 @@ results:
     'doc_id': results[i][0], 
     'doc': results[i][1], 
     'doc_seg': results[i][2], 
-    'doc_category': results[i][3], 
+    'doc_category': results[i][3] or doc_category, 
     'similarities': results[i][4]
 }
 """
 
 
 
-df = pd.DataFrame(FINAL_LIST, columns=['query_id', 'query', 'query_seg', 'query_category', 'doc_id', 'doc', 'doc_seg', 'doc_category', 'similarities'])
-#print(FINAL_LIST, df['query_category'])
-
-
-
-q_category = df.groupby("query_category")
-#print(q_category.groups)
-#print(q_category.get_group("圖書典藏位置"))
-
-
-
-candidate_category_list = list()
-candidate_category_dict = dict()
-rawCategory_index_adjustCategory = []
-
-for group in q_category.groups:
-    #print(q_category.get_group(group)['query'])
-    #print('\n\n該 group 類別【 {} 】下（query_category_Name），有相似的問句，\n而這些相似的問句隸屬以下類別：{}'.format(group, q_category.get_group(group)['doc_category'].tolist()))
-    
-    #print('<< group index >>', q_category.get_group(group)['doc_category'].index)
-    group_index = q_category.get_group(group)['doc_category'].index.tolist()
-    
-    for category in q_category.get_group(group)['doc_category'].tolist():
-        if category == 'false' or category == '其他':
-            candidate_category_list.append(category)
-        else:
-            # candidate_category_dict { 候選類別： 類別內的 Question 數量 }
-            candidate_category_dict[category] = doc_frequency[category]
-            candidate_category_list.append(category)
-    
-    adjusted_Category = Get_adjusted_category(candidate_category_dict, candidate_category_list)
-    rawCategory_index_adjustCategory.append([group, group_index, adjusted_Category])
-    print('\n>>>', [group, group_index, adjusted_Category])
-    print()
-    print()
-    candidate_category_list.clear()
-    candidate_category_dict.clear()
-    
-    
-    
 ### 更新 FINAL_LIST（加入新欄位至原本 FINAL_LIST）
-rowID_adjustedCategory_dict = dict()
-for rawCat, index, adjCat in rawCategory_index_adjustCategory:
+rowID_adjustedCategory_dict = defaultdict(str)
+for query_id, rawCat, adjCat in rawCategory_index_adjustCategory:
     temp_cat = set()
-    for i in index:
-        temp_cat.add(adjCat)
-    rowID_adjustedCategory_dict[i] = temp_cat
-# print(rowID_adjustedCategory_dict[5901]) #Output：{'關於借還書'}
+    temp_cat.add(adjCat)
+    rowID_adjustedCategory_dict[query_id] = temp_cat
+#print('+++', rowID_adjustedCategory_dict['5f3e14e1a9a4c23528871d34']) #Output：{'成為志工'}
 
 
 
 for i in range(len(FINAL_LIST)):
-    if i in rowID_adjustedCategory_dict:
-        FINAL_LIST[i].append(list(rowID_adjustedCategory_dict[i])[0]) 			#adjusted_Category
-        FINAL_LIST[i].append(doc_frequency[list(rowID_adjustedCategory_dict[i])[0]])	#adjusted_Category_count
-        FINAL_LIST[i].append(doc_frequency[FINAL_LIST[i][3]]) 				#query_CategoryName
+    FINAL_LIST_query_key = FINAL_LIST[i][0]
+    if FINAL_LIST_query_key in rowID_adjustedCategory_dict:
+        #print(list(rowID_adjustedCategory_dict[FINAL_LIST_query_key]))
+        FINAL_LIST[i].append(list(rowID_adjustedCategory_dict[FINAL_LIST_query_key])[0]) 			#adjusted_Category
+        FINAL_LIST[i].append(doc_frequency[list(rowID_adjustedCategory_dict[FINAL_LIST_query_key])[0]])	#adjusted_Category_count
+        FINAL_LIST[i].append(doc_frequency[FINAL_LIST[i][3]]) 				#query_CategoryName_count
+        
+        if FINAL_LIST[i][3] != FINAL_LIST[i][9]:
+            print(FINAL_LIST[i])
+        
     else:
         FINAL_LIST[i].append(FINAL_LIST[i][3]) 			#adjusted_Category == query_CategoryName
         FINAL_LIST[i].append(doc_frequency[FINAL_LIST[i][3]])	#adjusted_Category_count == query_Category_count
-        FINAL_LIST[i].append(doc_frequency[FINAL_LIST[i][3]]) 	#query_CategoryName
-    
+        FINAL_LIST[i].append(doc_frequency[FINAL_LIST[i][3]]) 	#query_CategoryName_count
 
 
 
