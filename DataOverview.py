@@ -86,9 +86,9 @@ counter = Counter(get_words(data_rawFAQ['clean_msg']))
 most_common = dict(counter.most_common(20))
 print(most_common)
 
-fig = plt.figure(figsize=(20, 14))
+fig1 = plt.figure(figsize=(20, 14))
 sns.barplot(x=list(most_common.values()), y=list(most_common.keys()))
-fig.savefig('Top20_most_common_words.png')
+fig1.savefig('Top20_most_common_words_Unigram.png')
 
 
 # Display Top80 most common words
@@ -99,4 +99,22 @@ whole_words = Counter()
 
 for msg in words:
     whole_words.update(msg)
-print(whole_words.most_common(80))
+print(whole_words.most_common(50))
+
+
+# Data Visualization - Bigram Analysis
+from sklearn.feature_extraction.text import CountVectorizer
+
+def get_top_text_ngrams(corpus, topN, n_gram):
+    vec = CountVectorizer(ngram_range=(n_gram, n_gram)).fit(corpus)
+    bag_of_words = vec.transform(corpus)
+    sum_words = bag_of_words.sum(axis=0) 
+    words_freq = [(word, sum_words[0, idx]) for word, idx in vec.vocabulary_.items()]
+    words_freq = sorted(words_freq, key = lambda x: x[1], reverse=True)
+    return words_freq[:topN]
+
+fig2 = plt.figure(figsize=(20, 14))
+most_common_bi = get_top_text_ngrams(data_rawFAQ['clean_msg'], 20, 2)
+most_common_bi = dict(most_common_bi)
+sns.barplot(x=list(most_common_bi.values()), y=list(most_common_bi.keys()))
+fig2.savefig('Top20_most_common_words_Bigram.png')
